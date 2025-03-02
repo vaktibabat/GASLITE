@@ -17,6 +17,8 @@ typer==0.12.5
 kmedoids==0.5.1
 scikit_learn==1.4.2
 sentence_transformers==2.7.0
+
+IsoScore
 # scikit-learn-extra
 # pip install pytrec-eval-terrier  # for windows
 
