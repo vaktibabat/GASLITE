@@ -79,7 +79,7 @@ def fine_tune_model(config):
     # I-STAR config
     zeta = config.zeta
     tuning_param = config.tuning_param
-    dataset = TextDataset(open(config.dataset_path).readlines(), tokenizer)
+    dataset = TextDataset(open(os.path.join("concept_queries", f"{config.concept}_heldin.txt")).readlines(), tokenizer)
     train_dataloader = DataLoader(dataset, batch_size=config.batch_size)
     h = model.config.hidden_size
 
@@ -100,9 +100,11 @@ def fine_tune_model(config):
             optimizer.step()
 
         # Save the model in the directory specified in the config
-        torch.save(model.state_dict(), os.path.join(config.output_path, f"{config.model_hf_name.split('/')[1]}-{epoch}.pt"))
+        torch.save(model.state_dict(), os.path.join(config.output_path, f"{config.model_hf_name.split('/')[1]}-{config.concept}-{epoch}.pt"))
 
         losses.append((epoch, iso_score_loss))
+        
+        print(f"[+] Finished epoch {epoch}")
 
     return losses
 
@@ -120,8 +122,8 @@ if __name__ == "__main__":
     parser.add_argument("--lr", default=1e-5, type=float)
     parser.add_argument("--model_hf_name", default=None, type=str)
     parser.add_argument("--zeta", default=0.2, type=float)
+    parser.add_argument("--concept", default="potter", type=str)
     parser.add_argument("--tuning_param", default=0.25, type=float)
-    parser.add_argument("--dataset_path", default=None, type=str)
     parser.add_argument("--output_path", default=None, type=str)
 
     config = parser.parse_args()
