@@ -100,7 +100,7 @@ def fine_tune_model(config):
             optimizer.step()
 
         # Save the model in the directory specified in the config
-        torch.save(model.state_dict(), os.path.join(config.output_path, f"{config.model_hf_name.split('/')[1]}-{epoch}.pt"))
+        torch.save(model.state_dict(), os.path.join(config.output_path, f"{config.model_hf_name.split('/')[1]}-{config.concept}-{epoch}.pt"))
 
         losses.append((epoch, iso_score_loss))
 
