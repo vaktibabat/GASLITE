@@ -120,6 +120,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", default=1e-5, type=float)
     parser.add_argument("--model_hf_name", default=None, type=str)
     parser.add_argument("--zeta", default=0.2, type=float)
+    parser.add_argument("--concept", default="potter", type=str)
     parser.add_argument("--tuning_param", default=0.25, type=float)
     parser.add_argument("--dataset_path", default=None, type=str)
     parser.add_argument("--output_path", default=None, type=str)
