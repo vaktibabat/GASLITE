@@ -29,6 +29,7 @@ class CoverAlgorithm:
             # Model info:
             model_hf_name: str,
             sim_func: str,
+            model_local_name: str,
 
             # Data to cluster:
             dataset_name: str,
@@ -36,6 +37,12 @@ class CoverAlgorithm:
             data_portion: float = 0.02,
             filter_in_qids: List[str] = None,
             filter_in_qids_name: str = None,  # usually the name of the concept of which queries we filter
+
+            # Dataset info so that we won't have to retrieve the dataset every time
+            corpus = None,
+            queries = None,
+            qrels = None,
+            qp_pairs_dataset = None,
 
             # Tech parameters:
             batch_size: int = 512,
@@ -46,12 +53,17 @@ class CoverAlgorithm:
         self.n_clusters = n_clusters
         self.use_algo_vecs = '__use_algo_vecs' in covering_algo_name
         self.model_hf_name = model_hf_name
+        self.model_local_name = model_local_name
         self.sim_func = sim_func
         self.dataset_name = dataset_name
         self.data_split = data_split
         self.data_portion = data_portion
         self.filter_in_qids = filter_in_qids
         self.batch_size = batch_size
+        self.corpus = corpus
+        self.queries = queries
+        self.qrels = qrels
+        self.qp_pairs_dataset = qp_pairs_dataset
 
         # Define cache dirs:
         self.cache_dir = f"data/cached_clustering/{self.dataset_name}_{self.model_hf_name.split('/')[-1]}_{self.sim_func}"
@@ -105,18 +117,22 @@ class CoverAlgorithm:
         # 1.1. Load model:
         model = RetrieverModel(
             model_hf_name=self.model_hf_name,
+            model_local_name=self.model_local_name,
             sim_func_name=self.sim_func,
             max_batch_size=self.batch_size,
         )
 
         # 1.2. Load dataset:
-        corpus, queries, qrels, qp_pairs_dataset = data_utils.load_dataset(
-            dataset_name=self.dataset_name,
-            data_split=self.data_split,
-            data_portion=self.data_portion,
-            embedder_model_name=self.model_hf_name,
-            filter_in_qids=self.filter_in_qids,
-        )
+        corpus, queries, qrels, qp_pairs_dataset = self.corpus, self.queries, self.qrels, self.qp_pairs_dataset
+        
+        if corpus is None or queries is None or qrels is None or qp_pairs_dataset is None:
+            corpus, queries, qrels, qp_pairs_dataset = data_utils.load_dataset(
+                dataset_name=self.dataset_name,
+                data_split=self.data_split,
+                data_portion=self.data_portion,
+                embedder_model_name=self.model_hf_name,
+                filter_in_qids=self.filter_in_qids,
+            )
         # 1.3. Load retrieval results:
         results = load_cached_eval(
             dataset_name=self.dataset_name,
@@ -235,16 +251,23 @@ class CoverAlgorithm:
         # 2. Load model and data
         model = RetrieverModel(
             model_hf_name=self.model_hf_name,
+            model_local_name=self.model_local_name,
             sim_func_name=self.sim_func,
             max_batch_size=self.batch_size,
         )
-        corpus, queries, qrels, qp_pairs_dataset = data_utils.load_dataset(
-            dataset_name=dataset_name_to_eval,
-            data_split=data_split_to_eval,
-            data_portion=data_portion_to_eval,
-            embedder_model_name=self.model_hf_name,
-            filter_in_qids=filter_in_qids_to_eval,
-        )
+        corpus, queries, qrels, qp_pairs_dataset = self.corpus, self.queries, self.qrels, self.qp_pairs_dataset
+        
+        # Use the specified data to save time by not loading the dataset again
+        if corpus is None or queries is None or qrels is None or qp_pairs_dataset is None:
+            corpus, queries, qrels, qp_pairs_dataset = data_utils.load_dataset(
+                dataset_name=self.dataset_name,
+                data_split=self.data_split,
+                data_portion=self.data_portion,
+                embedder_model_name=self.model_hf_name,
+                filter_in_qids=self.filter_in_qids,
+            )
+
+        qp_pairs_dataset.save_to_disk("./qp_pairs_dataset")
 
         # Embed the training queries:
         q_embs = model.embed(qp_pairs_dataset['query']).cuda()
