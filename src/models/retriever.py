@@ -16,6 +16,7 @@ class RetrieverModel:
                  sim_func_name: str = 'dot',
                  adv_loss_name: str = 'sum_of_sim',
                  model_hf_name: str = 'sentence-transformers/multi-qa-mpnet-base-dot-v1',  # 'sentence-transformers/all-MiniLM-L6-v2'
+                 model_local_name: str = None, # testing on local models
                  ):
         # Note this wrapper avoids normalizing the embeddings by default.
 
@@ -32,6 +33,12 @@ class RetrieverModel:
         self.tokenizer.padding_side = 'right'  # to align with the passage init scheme  # [TODO remove when init passage will not include padding]
 
         self.model = SentenceTransformer(model_hf_name, trust_remote_code=_trust_remote_code)
+        # Load the weights of a local model
+        if model_local_name is not None:
+            state_dict = torch.load(model_local_name)
+
+            self.model[0].auto_model.load_state_dict(state_dict)
+        
         self.model_encoder: sentence_transformers.models.Transformer = self.model[0].auto_model  # TODO generalize
         self.model_pooler: sentence_transformers.models.Pooling = self.model[1]  # TODO generalize
         self.model_final_layers: List[Any] = list(self.model)[2:]
