@@ -124,7 +124,7 @@ def fine_tune_model(model, config):
             loop.set_description(f"Epoch {epoch+1}")
             loop.set_postfix(loss=loss.item())
 
-        torch.save(model.state_dict(), os.path.join(config.output_path, f"{model_name}_sst-2_istar_{config.zeta}_{epoch}.pt"))
+        torch.save(model.state_dict(), os.path.join(config.output_path, f"{model_name}_sst-2_istar_{config.tuning_param}_{epoch}.pt"))
 
         avg_train_loss = train_loss / len(train_dataloader)
         print(f"Training Loss: {avg_train_loss:.4f}")
