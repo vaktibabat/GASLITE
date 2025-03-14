@@ -165,8 +165,8 @@ def fine_tune_model(model, config):
             neg_points = torch.reshape(torch.stack(neg_outputs.hidden_states)[1:,:,:,:], (-1,h))
             # Evaluate batch isotropy on the query and the two passages
             query_batch_iso = reg.IsoScore_star(query_points, query_C0, zeta=config.zeta, gpu_id=0, is_eval=False)
-            pos_batch_iso = reg.IsoScore_star(pos_points, query_C0, zeta=config.zeta, gpu_id=0, is_eval=False)
-            neg_batch_iso = reg.IsoScore_star(neg_points, query_C0, zeta=config.zeta, gpu_id=0, is_eval=False)
+            pos_batch_iso = reg.IsoScore_star(pos_points, pos_C0, zeta=config.zeta, gpu_id=0, is_eval=False)
+            neg_batch_iso = reg.IsoScore_star(neg_points, neg_C0, zeta=config.zeta, gpu_id=0, is_eval=False)
             # Avg. the isotropy scores and evaluate the complete loss
             avg_batch_iso = (query_batch_iso + pos_batch_iso + neg_batch_iso) / 3
             loss = l_ce + config.tuning_param * (1 - avg_batch_iso)
