@@ -34,9 +34,9 @@ def train_preprocess_function(examples):
     query_texts = ["query: " + text for text in examples["query"]]
     pos_texts = ["passage: " + text for text in examples["positive"]]
     neg_texts = ["passage: " + text for text in examples["negative"]]
-    enc_queries = tokenizer(query_texts, truncation=True, padding="max_length", max_length=128)
-    enc_pos = tokenizer(pos_texts, truncation=True, padding="max_length", max_length=128)
-    enc_neg = tokenizer(neg_texts, truncation=True, padding="max_length", max_length=128)
+    enc_queries = tokenizer(query_texts, truncation=True, padding="max_length", max_length=256)
+    enc_pos = tokenizer(pos_texts, truncation=True, padding="max_length", max_length=256)
+    enc_neg = tokenizer(neg_texts, truncation=True, padding="max_length", max_length=256)
 
     return {
         "query_input_ids": enc_queries["input_ids"],
@@ -50,15 +50,15 @@ def train_preprocess_function(examples):
 # Preprocess the queries
 def query_preprocess_function(examples):
     texts = ["query: " + text for text in examples["query"]]
-    return tokenizer(texts, truncation=True, padding="max_length", max_length=128)
+    return tokenizer(texts, truncation=True, padding="max_length", max_length=256)
 
 def positive_preprocess_function(examples):
     texts = ["passage: " + text for text in examples["positive"]]
-    return tokenizer(texts, truncation=True, padding="max_length", max_length=128)
+    return tokenizer(texts, truncation=True, padding="max_length", max_length=256)
 
 def negative_preprocess_function(examples):
     texts = ["passage: " + text for text in examples["negative"]]
-    return tokenizer(texts, truncation=True, padding="max_length", max_length=128)
+    return tokenizer(texts, truncation=True, padding="max_length", max_length=256)
 
 # Compute the shrinkage matrix $\Sigma_{S_i}$ at epoch i
 # slightly modified version of get_ci from https://github.com/bcbi-edu/p_eickhoff_isoscore/blob/main/I-STAR/training_utils.py#L40
