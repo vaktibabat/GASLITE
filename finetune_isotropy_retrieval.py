@@ -132,7 +132,7 @@ def fine_tune_model(model, config):
     pos_dataloader = DataLoader(pos_dataset, batch_size=16)
     neg_dataloader = DataLoader(neg_dataset, batch_size=16)
     # Start training
-    model_name = config.model_hf_name.split("/")[0]
+    model_name = config.model_hf_name.split("/")[1]
     reg = istar()
     model.train()
     h = model[0].auto_model.config.hidden_size 
