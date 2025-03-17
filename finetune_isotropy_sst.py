@@ -95,7 +95,7 @@ def fine_tune_model(model, config):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=config.lr)
     # model name without the repo
-    model_name = config.model_hf_name.split("/")[0]
+    model_name = config.model_hf_name.split("/")[1]
 
     h = model.config.hidden_size 
     reg = istar()
