@@ -60,7 +60,7 @@ class IsotropyEvaluator:
     def gaslite_cosreg(self, x='passage', y='passage', n_evals=1500, batch_size=100):
         """Calculate the average similarity (`sim_func`) of a random query to a random passage."""
         assert x in ['query', 'passage'] and y in ['query', 'passage']
-        random.seed(101)
+        random.seed(100)
         x_texts = random.sample(self.qp_pairs_dataset[x].copy(), n_evals)
         y_texts = random.sample(self.qp_pairs_dataset[y].copy(), n_evals)
         #x_texts = self.qp_pairs_dataset[x].copy()[:n_evals]
@@ -86,7 +86,7 @@ class IsotropyEvaluator:
         pass
     # Evaluate IsoScore* on a given dataset
     def iso_score_star(self, x="passage", n_evals=1500, batch_size=100, zeta=0.2):
-        random.seed(101)
+        random.seed(100)
         samples = random.sample(self.qp_pairs_dataset[x].copy(), n_evals)
         texts = self.tokenizer(samples, return_tensors="pt", padding=True, truncation=True)
         texts = TensorDataset(texts["input_ids"].to(device), texts["attention_mask"].to(device))
@@ -94,13 +94,13 @@ class IsotropyEvaluator:
         h = self.model[0].auto_model.config.hidden_size 
         reg = istar()
         C0 = compute_shrinkage_matrix(dataloader, self.model)
-        isos = []
+        isos = torch.tensor(0, dtype=torch.float64,device=torch.device("cuda"))
 
         for idx, batch in enumerate(dataloader):
             outputs = self.model[0].auto_model(input_ids=batch[0], attention_mask=batch[1], output_hidden_states=True)
             points = torch.reshape(torch.stack(outputs.hidden_states)[1:,:,:,:], (-1,h))
             batch_iso = reg.IsoScore_star(points, C0, zeta=zeta, gpu_id=0, is_eval=False)
-            isos += [batch_iso]
+            isos += batch_iso
         
         # Return the mean IsoScore* across all batches
-        return sum(isos) / len(isos)
+        return isos / len(dataloader)
