@@ -17,6 +17,7 @@ class RetrieverModel:
                  adv_loss_name: str = 'sum_of_sim',
                  model_hf_name: str = 'sentence-transformers/multi-qa-mpnet-base-dot-v1',  # 'sentence-transformers/all-MiniLM-L6-v2'
                  model_local_name: str = None, # testing on local models
+                 model: SentenceTransformer = None, # if the user has provided a model to use
                  ):
         # Note this wrapper avoids normalizing the embeddings by default.
 
@@ -32,12 +33,24 @@ class RetrieverModel:
         self.tokenizer.model_max_length = 512
         self.tokenizer.padding_side = 'right'  # to align with the passage init scheme  # [TODO remove when init passage will not include padding]
 
-        self.model = SentenceTransformer(model_hf_name, trust_remote_code=_trust_remote_code)
+        if model is not None:
+            self.model = model
+        else:
+            self.model = SentenceTransformer(model_hf_name, trust_remote_code=_trust_remote_code)
+        pooler_dict = {}
         # Load the weights of a local model
         if model_local_name is not None:
             state_dict = torch.load(model_local_name)
 
+            state_dict = {k[len("bert."):]: v for k, v in state_dict.items()}
+            del state_dict["ifier.weight"]
+            del state_dict["ifier.bias"]
+            #pooler_dict = {"pooler.dense.weight": state_dict["pooler.dense.weight"], "pooler.dense.bias": state_dict["pooler.dense.bias"]}
+            del state_dict["pooler.dense.weight"]
+            del state_dict["pooler.dense.bias"]
+
             self.model[0].auto_model.load_state_dict(state_dict)
+            #self.model.pooler.load_state_dict(pooler_dict)
         
         self.model_encoder: sentence_transformers.models.Transformer = self.model[0].auto_model  # TODO generalize
         self.model_pooler: sentence_transformers.models.Pooling = self.model[1]  # TODO generalize
