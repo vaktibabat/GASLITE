@@ -9,20 +9,20 @@ import numpy as np
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.losses import MultipleNegativesRankingLoss
-from src.benchmarking.isotropy import IsotropyEvaluator
 from src.benchmarking.robustness import RobustnessEvaluator
 from src.benchmarking.performance import PerformanceEvaluator
 from torch import optim
 from sklearn.model_selection import train_test_split
+from src.isotropy import MultiConceptIsotropyEvaluator
 from IsoScore.IsoScore import *
 from torch.utils.data import DataLoader
 from datasets import load_dataset, Dataset
 from src import data_utils
 from tqdm import tqdm
 # FOR REPRODUCABILITY
-#torch.random.manual_seed(101)
-#random.seed(101)
-#np.random.seed(101)
+torch.random.manual_seed(100)
+random.seed(100)
+np.random.seed(100)
 # ---SETUP---
 concept_portion_to_train = 0.5
 dataset_name = "msmarco"
@@ -49,6 +49,9 @@ passage_prefixes = {
     "nomic-ai/nomic-embed-text-v1": "serach_passage: ",
 }
 
+model_name = None
+tokenizer = None
+
 def load_data(concept_to_attack=None, model_hf_name=None):
     if concept_to_attack is not None:
         with open(f"config/cover_alg/concept-{concept_to_attack}.yaml", "r") as f:
@@ -68,18 +71,6 @@ def load_data(concept_to_attack=None, model_hf_name=None):
         filter_in_qids=None if concept_to_attack is None else concept_qids,
     )
 
-full_corpus, full_queries, full_qrels, full_qp_pairs_dataset = None, None, None, None
-model_name = None
-tokenizer = None
-
-def iso_eval_wrapper(model):
-    global full_corpus, full_queries, full_qrels, full_qp_pairs_dataset 
-
-    iso_eval = IsotropyEvaluator(model, full_qp_pairs_dataset, full_corpus, full_queries, full_qrels, {})
-
-    # hopefully i'll be able to use higher n_evals on the cluster
-    return iso_eval.gaslite_cosreg(n_evals=1500), iso_eval.iso_score_star(batch_size=32, n_evals=200)
-
 # One fine-tuning batched GD step
 def batch_step(
         model, # The model we want to fine-tune
@@ -88,10 +79,11 @@ def batch_step(
         reg, # I-STAR regularizer to use
         optimizer,
         criterion,
-        loop, # tqdm loop
-        epoch,
 ):
     h = model[0].auto_model.config.hidden_size
+    for param in model.parameters():
+        param.requires_grad = True
+
     batch = {k: v.to(device) for k, v in batch.items()}  # Move batch to GPU
     optimizer.zero_grad()
     # In addition to evaluating the retrieval loss, we need to run the model on each individual query/passage
@@ -108,6 +100,7 @@ def batch_step(
     query_points = torch.reshape(torch.stack(query_outputs.hidden_states)[1:,:,:,:], (-1,h))
     pos_points = torch.reshape(torch.stack(pos_outputs.hidden_states)[1:,:,:,:], (-1,h))
     neg_points = torch.reshape(torch.stack(neg_outputs.hidden_states)[1:,:,:,:], (-1,h))
+    
     # Evaluate batch isotropy on the query and the two passages
     query_batch_iso = reg.IsoScore_star(query_points, query_C0, zeta=config.zeta, gpu_id=0, is_eval=False)
     pos_batch_iso = reg.IsoScore_star(pos_points, pos_C0, zeta=config.zeta, gpu_id=0, is_eval=False)
@@ -118,8 +111,6 @@ def batch_step(
 
     loss.backward()
     optimizer.step()
-
-    loop.set_postfix(loss=loss.item())
 
 # Compute the shrinkage matrix $\Sigma_{S_i}$ at epoch i
 # slightly modified version of get_ci from https://github.com/bcbi-edu/p_eickhoff_isoscore/blob/main/I-STAR/training_utils.py#L40
@@ -192,7 +183,7 @@ def prepare_dataset(config):
 
     train_df = pd.DataFrame({"query": train_dataset["query"], "positive": train_dataset["positive"], "negative": train_dataset["negative"]})
     # Use a limited amount of samples
-    train_df, _ = train_test_split(train_df, train_size=config.train_size, random_state=42)
+    train_df, _ = train_test_split(train_df, train_size=config.train_size, random_state=100)
 
     train_dataset = Dataset.from_pandas(train_df)
     train_dataset = train_dataset.map(train_preprocess_function, batched=True)
@@ -210,17 +201,15 @@ def prepare_dataset(config):
     return train_dataset, query_dataset, pos_dataset, neg_dataset
 
 def fine_tune_model(model, config):
-    h = 768
-    #model = torch.compile(model)
-    #torch.backends.cuda.matmul.allow_tf32 = True
-    #robustness_eval = RobustnessEvaluator(config.model_hf_name, config.concept)
-    #perf_eval = PerformanceEvaluator(config.model_hf_name)
+    # Create a robustness evaluator for each concept
+    concepts_to_eval = ["potter", "iphone", "vaccine"]
+    robustness_evals = {k: RobustnessEvaluator(config.model_hf_name, k) for k in concepts_to_eval}
+    perf_eval = PerformanceEvaluator(config.model_hf_name)
+    iso_eval = MultiConceptIsotropyEvaluator(concepts_to_eval, config.model_hf_name)
     model.train()
     # Set up loss & optimizer
     criterion = MultipleNegativesRankingLoss(model)
     optimizer = optim.AdamW(model.parameters(), lr=config.lr, fused=True)
-    #scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
-    scaler = torch.amp.GradScaler("cuda")
     # Prepare datasets
     train_dataset, query_dataset, pos_dataset, neg_dataset = prepare_dataset(config)
     # Prepare training set dataloader
@@ -234,79 +223,48 @@ def fine_tune_model(model, config):
     model.train()
     # Metrics after each epoch
     gaslite_cosregs = []
-    isoscores = []
+    general_isoscores = []
+    concept_isoscores = []
     potter_appeared_10 = []
     ndcg_10 = []
 
+    # Evaluate metrics
+    iso_results = iso_eval.evaluate(model)
+    appeared_10s = {concept: robustness_evals[concept].evaluate(model) for concept in concepts_to_eval}
+    ndcg = perf_eval.evaluate(model)
+
+    print(iso_results)
+    print(appeared_10s)
+    print(ndcg)
+
     for epoch in range(config.epochs):
-        #@tuning_param = config.tuning_param / (1 + 0.5 * epoch)
+        # Compute shrinkage matrices
         query_C0 = compute_shrinkage_matrix(query_dataloader, model)
         pos_C0 = compute_shrinkage_matrix(pos_dataloader, model)
         neg_C0 = compute_shrinkage_matrix(neg_dataloader, model)
-
-        print(query_C0)
 
         loop = tqdm(train_dataloader, leave=True)
         loop.set_description(f"Epoch {epoch+1}")
 
         for batch in loop:
-            for param in model.parameters():
-                param.requires_grad = True
+            batch_step(model, query_C0, pos_C0, neg_C0,
+                       batch, reg, optimizer, criterion)
 
-            with torch.amp.autocast("cuda"):
-                batch = {k: v.to(device) for k, v in batch.items()}  # Move batch to GPU
-                optimizer.zero_grad(set_to_none=True)
-                # In addition to evaluating the retrieval loss, we need to run the model on each individual query/passage
-                # to get the hidden states, allowing us to evaluate the batch isotropy
-                query_outputs = model[0].auto_model(input_ids=batch["query_input_ids"], attention_mask=batch["query_attn_mask"], output_hidden_states=True)
-                pos_outputs = model[0].auto_model(input_ids=batch["pos_input_ids"], attention_mask=batch["pos_attn_mask"], output_hidden_states=True)
-                neg_outputs = model[0].auto_model(input_ids=batch["neg_input_ids"], attention_mask=batch["neg_attn_mask"], output_hidden_states=True)
-                # Evaluate retrieval loss
-                l_ce = criterion(sentence_features=[{"input_ids": batch["query_input_ids"], "attention_mask": batch["query_attn_mask"]},
-                                                    {"input_ids": batch["pos_input_ids"], "attention_mask": batch["pos_attn_mask"]},
-                                                    {"input_ids": batch["neg_input_ids"], "attention_mask": batch["neg_attn_mask"]}],
-                                                    labels=None)
-                # Concatenate hidden states into points
-                query_points = torch.reshape(torch.stack(query_outputs.hidden_states)[1:,:,:,:], (-1,h))
-                pos_points = torch.reshape(torch.stack(pos_outputs.hidden_states)[1:,:,:,:], (-1,h))
-                neg_points = torch.reshape(torch.stack(neg_outputs.hidden_states)[1:,:,:,:], (-1,h))
-                # Evaluate batch isotropy on the query and the two passages
-                query_batch_iso = reg.IsoScore_star(query_points, query_C0, zeta=config.zeta, gpu_id=0, is_eval=False)
-                pos_batch_iso = reg.IsoScore_star(pos_points, pos_C0, zeta=config.zeta, gpu_id=0, is_eval=False)
-                neg_batch_iso = reg.IsoScore_star(neg_points, neg_C0, zeta=config.zeta, gpu_id=0, is_eval=False)
-                # Avg. the isotropy scores and evaluate the complete loss
-                avg_batch_iso = (query_batch_iso + pos_batch_iso + neg_batch_iso) / 3
-                loss = l_ce + config.tuning_param * (1 - avg_batch_iso)
-
-            #scheduler.step()
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-
-        gaslite_cosreg, isoscore = iso_eval_wrapper(model)
-        appeared_10 = robustness_eval.evaluate(model)
+        # Evaluate metrics
+        iso_results = iso_eval.evaluate(model)
+        appeared_10s = {concept: robustness_evals[concept].evaluate(model) for concept in concepts_to_eval}
         ndcg = perf_eval.evaluate(model)
-        #scheduler.step()
 
-        print(f"GASLITE CosReg: {gaslite_cosreg}\nIsoScore*: {isoscore}\nPotter PERFECT APPPEARED@10: {appeared_10}\nNDCG@10: {ndcg}")
+        print(iso_results)
+        print(appeared_10s)
+        print(ndcg)
 
-        gaslite_cosregs += [gaslite_cosreg]
-        isoscores += [isoscore]
-        potter_appeared_10 += [appeared_10]
-        ndcg_10 += [ndcg]
-
-            #loop.set_postfix(loss=loss.item())
-
-    print(gaslite_cosregs)
-    print(isoscores)
-    print(potter_appeared_10)
-    print(ndcg_10)
 
 def main(config):
-    global full_corpus, full_queries, full_qrels, full_qp_pairs_dataset, model_name, tokenizer
+    global model_name, tokenizer
+
     # Pre-load MSMARCO so that we won't have to reload it in each evaluation
     model_name = config.model_hf_name
-    full_corpus, full_queries, full_qrels, full_qp_pairs_dataset = load_data(None, config.model_hf_name) 
     model = SentenceTransformer(config.model_hf_name)
     tokenizer = model.tokenizer
 
