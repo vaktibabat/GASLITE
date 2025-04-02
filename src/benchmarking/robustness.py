@@ -58,10 +58,11 @@ class RobustnessEvaluator:
         queries=self.queries, 
         qrels=self.qrels, 
         qp_pairs_dataset=self.qp_pairs_dataset)
-
-        return cover_algo.evaluate_retrieval(
+        results = cover_algo.evaluate_retrieval(
         data_split_to_eval=data_split,
         data_portion_to_eval=1.0,
         filter_in_qids_to_eval=self.heldout_concept_qids,  # held-out concept queries
         centroid_vecs=emb_targets,
-        skip_existing=False)["adv_appeared@10"]
+        skip_existing=False)
+
+        return results["adv_appeared@10"], results["adv_scores_mean"]

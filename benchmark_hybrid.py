@@ -222,20 +222,9 @@ def fine_tune_model(model, config):
     reg = istar()
     model.train()
     # Metrics after each epoch
-    gaslite_cosregs = []
-    general_isoscores = []
-    concept_isoscores = []
-    potter_appeared_10 = []
-    ndcg_10 = []
-
-    # Evaluate metrics
-    iso_results = iso_eval.evaluate(model)
-    appeared_10s = {concept: robustness_evals[concept].evaluate(model) for concept in concepts_to_eval}
-    ndcg = perf_eval.evaluate(model)
-
-    print(iso_results)
-    print(appeared_10s)
-    print(ndcg)
+    iso_results_all = []
+    robustness_results_all = []
+    ndcg_results_all = []
 
     for epoch in range(config.epochs):
         # Compute shrinkage matrices
@@ -252,12 +241,20 @@ def fine_tune_model(model, config):
 
         # Evaluate metrics
         iso_results = iso_eval.evaluate(model)
-        appeared_10s = {concept: robustness_evals[concept].evaluate(model) for concept in concepts_to_eval}
+        robustness_results = {concept: robustness_evals[concept].evaluate(model) for concept in concepts_to_eval}
         ndcg = perf_eval.evaluate(model)
 
+        iso_results_all += [iso_results]
+        robustness_results_all += [robustness_results]
+        ndcg_results_all += [ndcg]
+
         print(iso_results)
-        print(appeared_10s)
+        print(robustness_results)
         print(ndcg)
+
+    print(iso_results_all)
+    print(robustness_results_all)
+    print(ndcg_results_all)
 
 
 def main(config):
