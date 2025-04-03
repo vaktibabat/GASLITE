@@ -85,8 +85,8 @@ class IsotropyEvaluator:
         random.seed(100)
         
         if general:
-            x_texts = [self.corpus[k]["text"] for k in random.sample(self.corpus.keys(), n_evals)]
-            y_texts = [self.corpus[k]["text"] for k in random.sample(self.corpus.keys(), n_evals)]
+            x_texts = [self.corpus[k]["text"] for k in random.sample(list(self.corpus.keys()), n_evals)]
+            y_texts = [self.corpus[k]["text"] for k in random.sample(list(self.corpus.keys()), n_evals)]
         else:
             x_texts = self.qp_pairs_dataset[x].copy()[:n_evals]
             y_texts = self.qp_pairs_dataset[y].copy()[-n_evals:]
@@ -112,7 +112,7 @@ class IsotropyEvaluator:
         model.train()
         random.seed(100)
         if general:
-            samples = [self.corpus[k]["text"] for k in random.sample(self.corpus.keys(), n_evals)]
+            samples = [self.corpus[k]["text"] for k in random.sample(list(self.corpus.keys()), n_evals)]
         else:
             samples = self.qp_pairs_dataset[x].copy()[:n_evals]
 
